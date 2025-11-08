@@ -9,10 +9,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ClusterInfo {
     private String clusterId;
-    private List<BrokerInfo> brokers;
+    private int brokers;
     private int controllerId;
 
-    public ClusterInfo(String clusterId, List<BrokerInfo> brokers, int controllerId) {
+    public ClusterInfo(String clusterId, int brokers, int controllerId) {
         this.clusterId = clusterId;
         this.brokers = brokers;
         this.controllerId = controllerId;

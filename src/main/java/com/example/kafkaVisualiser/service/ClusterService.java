@@ -22,11 +22,7 @@ public class ClusterService {
 
     public ClusterInfo getClusterInfo() throws ExecutionException, InterruptedException {
         DescribeClusterResult cluster = adminClient.describeCluster();
-
-        List<BrokerInfo> brokers = cluster.nodes().get().stream()
-                .map(node -> new BrokerInfo(node.id(), node.host(), node.port()))
-                .collect(Collectors.toList());
-        return new ClusterInfo(cluster.clusterId().get(), brokers, cluster.controller().get().id());
+        return new ClusterInfo(cluster.clusterId().get(), getNumberOfBrokers(), cluster.controller().get().id());
 
     }
 

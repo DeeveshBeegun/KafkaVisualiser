@@ -1,22 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { FC } from "react";
 import type { LucideIcon } from "lucide-react";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { Boxes, Server, Database, Activity, AlertTriangle } from "lucide-react";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "./components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "./components/ui/card";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
 
-const clusters = [
-  { id: "dev-1", name: "DEV CLUSTER", brokers: 3 },
-  { id: "uat-1", name: "UAT CLUSTER", brokers: 5 },
-  { id: "prod-1", name: "PROD CLUSTER", brokers: 10 },
-];
+interface Cluster {
+  clusterId: string;
+  brokers: number;
+  controllerId: number;
+}
 
 interface StatProps {
   label: string;
@@ -40,7 +35,36 @@ const Stat: FC<StatProps> = ({ label, value, icon: Icon, tone = "" }) => (
 );
 export default function App() {
   const [q, setQ] = useState("");
-  const [activeCluster, setActiveCluster] = useState(clusters[0].id);
+  const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [activeCluster, setActiveCluster] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchClusters = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch("http://localhost:8080/api/v1/cluster");
+        if (!response.ok) {
+          throw new Error("Failed to fetch clusters");
+        }
+        const data: Cluster = await response.json();
+
+        console.log(data);
+        // The backend returns a single Cluster object, not an array.
+        // Wrap it in an array to keep the rest of the UI logic (map, list) unchanged.
+        setClusters([data]);
+        setActiveCluster(data.clusterId);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "An unknown error occurred"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchClusters();
+  }, []);
 
   return (
     <TooltipProvider>
@@ -56,17 +80,25 @@ export default function App() {
               <CardTitle className="text-sm">Clusters</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {loading && (
+                <div className="text-xs text-muted-foreground px-2">
+                  Loading clusters...
+                </div>
+              )}
+              {error && !loading && (
+                <div className="text-xs text-destructive px-2">{error}</div>
+              )}
               {clusters.map((c) => (
                 <button
-                  key={c.id}
-                  onClick={() => setActiveCluster(c.id)}
+                  key={c.clusterId}
+                  onClick={() => setActiveCluster(c.clusterId)}
                   className={`w-full text-left px-3 py-2 rounded-xl border hover:bg-accent hover:text-accent-foreground transition ${
-                    activeCluster === c.id
+                    activeCluster === c.clusterId
                       ? "bg-accent text-accent-foreground"
                       : ""
                   }`}
                 >
-                  <div className="text-sm font-medium">{c.name}</div>
+                  <div className="text-sm font-medium">{c.clusterId}</div>
                   <div className="text-xs text-muted-foreground">
                     {c.brokers} brokers
                   </div>
@@ -95,7 +127,8 @@ export default function App() {
               <Server className="h-5 w-5" />
               <span className="font-semibold">Cluster Dashboard</span>
               <Badge variant="secondary">
-                {clusters.find((c) => c.id === activeCluster)?.name}
+                {clusters.find((c) => c.clusterId === activeCluster)
+                  ?.clusterId ?? "-"}
               </Badge>
             </div>
             <div className="flex items-center gap-2">
