@@ -500,23 +500,6 @@ export default function App() {
             </div>
           </header>
 
-          {/* Top stats */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Brokers" value="3" icon={Server} />
-            <Stat label="Topics" value="128" icon={Database} />
-            <Stat label="Avg Lag" value="423" icon={Activity} />
-            <Stat
-              label="Alerts"
-              value={
-                <span className="flex items-center gap-1">
-                  <AlertTriangle className="h-4 w-4" />2
-                </span>
-              }
-              icon={AlertTriangle}
-              tone="text-destructive"
-            />
-          </section>
-
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -527,6 +510,22 @@ export default function App() {
 
             {/* OVERVIEW */}
             <TabsContent value="overview" className="pt-4 space-y-6">
+              {/* Top stats only on Overview */}
+              <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Stat label="Brokers" value="3" icon={Server} />
+                <Stat label="Topics" value="128" icon={Database} />
+                <Stat label="Avg Lag" value="423" icon={Activity} />
+                <Stat
+                  label="Alerts"
+                  value={
+                    <span className="flex items-center gap-1">
+                      <AlertTriangle className="h-4 w-4" />2
+                    </span>
+                  }
+                  icon={AlertTriangle}
+                  tone="text-destructive"
+                />
+              </section>
               <div className="grid gap-4 lg:grid-cols-3">
                 <Card className="lg:col-span-2">
                   <CardHeader className="pb-2">
