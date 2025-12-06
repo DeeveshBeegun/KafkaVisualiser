@@ -65,6 +65,12 @@ interface Cluster {
   controllerId: number;
 }
 
+interface BrokerInfo {
+  id: number;
+  host: string;
+  port: number;
+}
+
 interface RegisteredCluster extends Cluster {
   baseUrl: string;
 }
@@ -80,18 +86,6 @@ const consumerLagSeries = Array.from({ length: 14 }).map((_, i) => ({
   ts: `T-${14 - i}m`,
   lag: Math.round(200 + Math.random() * 1200),
 }));
-
-const brokerMetrics = [
-  { broker: "0", cpu: 22, net: 210, disk: 58 },
-  { broker: "1", cpu: 33, net: 180, disk: 72 },
-  { broker: "2", cpu: 18, net: 240, disk: 61 },
-  { broker: "3", cpu: 22, net: 210, disk: 58 },
-  { broker: "4", cpu: 33, net: 180, disk: 72 },
-  { broker: "5", cpu: 18, net: 240, disk: 61 },
-  { broker: "6", cpu: 22, net: 210, disk: 58 },
-  { broker: "7", cpu: 33, net: 180, disk: 72 },
-  { broker: "8", cpu: 18, net: 240, disk: 61 },
-];
 
 const topicRows = Array.from({ length: 12 }).map((_, i) => ({
   name: `orders.v${i % 3}`,
@@ -170,6 +164,12 @@ export default function App() {
   const [viewerPaused, setViewerPaused] = useState(false);
   const [viewerFilter, setViewerFilter] = useState("");
   const viewerFilterRef = useRef<HTMLInputElement | null>(null);
+
+  // Brokers (overview) state
+  const [brokersInfo, setBrokersInfo] = useState<BrokerInfo[]>([]);
+  const [brokersLoading, setBrokersLoading] = useState(false);
+  const [brokersError, setBrokersError] = useState<string | null>(null);
+  const [selectedBroker, setSelectedBroker] = useState<BrokerInfo | null>(null);
 
   // Helper to highlight case-insensitive matches of needle within a string
   const highlightPartsCI = (text: string, needle: string) => {
@@ -301,6 +301,36 @@ export default function App() {
     loadRegistered();
   }, []);
 
+  // Load brokers when overview tab active or cluster changes
+  useEffect(() => {
+    const load = async () => {
+      if (tab !== "overview" || !activeCluster) return;
+      const cluster = clusters.find((c) => c.clusterId === activeCluster);
+      if (!cluster) return;
+      setBrokersLoading(true);
+      setBrokersError(null);
+      try {
+        const r = await fetch(
+          `${cluster.baseUrl.replace(/\/$/, "")}/api/v1/brokers`
+        );
+        if (!r.ok) throw new Error(`Failed to load brokers`);
+        const list: BrokerInfo[] = await r.json();
+        setBrokersInfo(list);
+        // Preserve selection if still present, else clear
+        setSelectedBroker((prev) =>
+          prev && list.find((b) => b.id === prev.id) ? prev : null
+        );
+      } catch (e) {
+        setBrokersError(
+          e instanceof Error ? e.message : "Unknown brokers error"
+        );
+      } finally {
+        setBrokersLoading(false);
+      }
+    };
+    load();
+  }, [tab, activeCluster, clusters]);
+
   // Apply dark + contrast classes based on settings
   useEffect(() => {
     const root = document.documentElement;
@@ -375,6 +405,33 @@ export default function App() {
     };
   }, [viewerMessages, viewerFilter, viewerLimit]);
 
+  const handleBrokerClick = (data: any) => {
+    if (!data) return;
+    let idStr: string | null = null;
+    try {
+      // Recharts Bar onClick gives { value, index, payload }
+      if (data && typeof data === "object") {
+        if ("payload" in data && (data as any).payload) {
+          const p = (data as any).payload;
+          if (p && p.broker != null) idStr = String(p.broker);
+        } else if ("broker" in data) {
+          idStr = String((data as any).broker);
+        } else if (
+          "activePayload" in data &&
+          Array.isArray((data as any).activePayload) &&
+          (data as any).activePayload[0]?.payload?.broker != null
+        ) {
+          idStr = String((data as any).activePayload[0].payload.broker);
+        }
+      }
+    } catch {}
+    if (!idStr) return;
+    const info = brokersInfo.find((b) => String(b.id) === idStr);
+    setSelectedBroker(
+      info ?? { id: Number(idStr), host: String(idStr), port: 9092 }
+    );
+  };
+
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-background text-foreground grid grid-cols-[260px_1fr]">
@@ -440,64 +497,6 @@ export default function App() {
                   ?.clusterId ?? "-"}
               </Badge>
             </div>
-            <div className="flex items-center gap-2">
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search topics, consumers…"
-                className="w-64"
-              />
-              <Select
-                value={settings.theme}
-                onValueChange={(v) =>
-                  setSettings((s) => ({ ...s, theme: v as any }))
-                }
-              >
-                <SelectTrigger className="w-[110px]">
-                  <SelectValue placeholder="Theme" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="system">System</SelectItem>
-                  <SelectItem value="light">Light</SelectItem>
-                  <SelectItem value="dark">Dark</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant={settings.highContrast ? "secondary" : "outline"}
-                size="sm"
-                onClick={() =>
-                  setSettings((s) => ({
-                    ...s,
-                    highContrast: !s.highContrast,
-                  }))
-                }
-              >
-                {settings.highContrast ? "HC On" : "HC Off"}
-              </Button>
-              <Button variant="outline" size="icon">
-                <Search className="h-4 w-4" />
-              </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="mr-2 h-4 w-4" /> New Topic
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[520px]">
-                  <DialogHeader>
-                    <DialogTitle>Create Topic</DialogTitle>
-                  </DialogHeader>
-                  <div className="grid gap-3">
-                    <Input placeholder="Topic Name" />
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input placeholder="Partitions" type="number" />
-                      <Input placeholder="Replication" type="number" />
-                    </div>
-                    <Button>Create</Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
           </header>
 
           <Tabs value={tab} onValueChange={setTab}>
@@ -512,7 +511,19 @@ export default function App() {
             <TabsContent value="overview" className="pt-4 space-y-6">
               {/* Top stats only on Overview */}
               <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat label="Brokers" value="3" icon={Server} />
+                <Stat
+                  label="Brokers"
+                  value={
+                    tab === "overview"
+                      ? brokersLoading
+                        ? "…"
+                        : brokersInfo.length
+                        ? String(brokersInfo.length)
+                        : "-"
+                      : "-"
+                  }
+                  icon={Server}
+                />
                 <Stat label="Topics" value="128" icon={Database} />
                 <Stat label="Avg Lag" value="423" icon={Activity} />
                 <Stat
@@ -526,7 +537,7 @@ export default function App() {
                   tone="text-destructive"
                 />
               </section>
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid gap-4 lg:grid-cols-2">
                 <Card className="lg:col-span-2">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">
@@ -568,26 +579,6 @@ export default function App() {
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">
-                      Broker Utilization
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={brokerMetrics}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="broker" />
-                        <YAxis />
-                        <Legend />
-                        <Bar dataKey="cpu" name="CPU %" />
-                        <Bar dataKey="net" name="Net MB/s" />
-                        <Bar dataKey="disk" name="Disk %" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
               </div>
 
               <Card>
@@ -610,6 +601,18 @@ export default function App() {
 
             {/* TOPICS */}
             <TabsContent value="topics" className="pt-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search topics, consumers…"
+                  className="w-64"
+                />
+                <Button variant="outline" size="icon">
+                  <Search className="h-4 w-4" />
+                </Button>
+              </div>
+
               {viewerOpen && viewerTopic ? (
                 <>
                   <SectionTitle
@@ -863,6 +866,29 @@ export default function App() {
                   <SectionTitle
                     right={
                       <>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <Plus className="mr-2 h-4 w-4" /> New Topic
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[520px]">
+                            <DialogHeader>
+                              <DialogTitle>Create Topic</DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-3">
+                              <Input placeholder="Topic Name" />
+                              <div className="grid grid-cols-2 gap-3">
+                                <Input placeholder="Partitions" type="number" />
+                                <Input
+                                  placeholder="Replication"
+                                  type="number"
+                                />
+                              </div>
+                              <Button>Create</Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                         <Button variant="outline" size="sm">
                           <Download className="h-4 w-4 mr-2" />
                           Export
@@ -964,6 +990,18 @@ export default function App() {
 
             {/* CONSUMERS */}
             <TabsContent value="consumers" className="pt-4 space-y-4">
+
+            <div className="flex items-center gap-2">
+                            <Input
+                              value={q}
+                              onChange={(e) => setQ(e.target.value)}
+                              placeholder="Search topics, consumers…"
+                              className="w-64"
+                            />
+                            <Button variant="outline" size="icon">
+                              <Search className="h-4 w-4" />
+                            </Button>
+                          </div>
               <SectionTitle
                 right={
                   <div className="flex items-center gap-2">
@@ -1353,6 +1391,77 @@ export default function App() {
         </main>
       </div>
       {/* Topic Messages Viewer moved inline within the Topics tab */}
+      {/* Broker details dialog */}
+      <Dialog
+        open={!!selectedBroker}
+        onOpenChange={(open) => {
+          if (!open) setSelectedBroker(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedBroker
+                ? `Broker ${selectedBroker.id}`
+                : "Broker Details"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {brokersError && (
+              <div className="text-destructive text-xs">{brokersError}</div>
+            )}
+            {selectedBroker && (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-muted-foreground text-xs">ID</div>
+                    <div className="font-mono">{selectedBroker.id}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Port</div>
+                    <div className="font-mono">{selectedBroker.port}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-muted-foreground text-xs">Host</div>
+                    <div className="font-mono break-all">
+                      {selectedBroker.host}
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <div className="text-xs uppercase tracking-wide font-medium mb-1">
+                    Metrics (sample)
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2 rounded bg-muted/50">
+                      CPU:{" "}
+                      {brokerMetrics.find(
+                        (m) => m.broker === String(selectedBroker.id)
+                      )?.cpu ?? "-"}
+                      %
+                    </div>
+                    <div className="p-2 rounded bg-muted/50">
+                      Net:{" "}
+                      {brokerMetrics.find(
+                        (m) => m.broker === String(selectedBroker.id)
+                      )?.net ?? "-"}{" "}
+                      MB/s
+                    </div>
+                    <div className="p-2 rounded bg-muted/50">
+                      Disk:{" "}
+                      {brokerMetrics.find(
+                        (m) => m.broker === String(selectedBroker.id)
+                      )?.disk ?? "-"}
+                      %
+                    </div>
+                    <div className="p-2 rounded bg-muted/50">ISR: 3</div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 }
